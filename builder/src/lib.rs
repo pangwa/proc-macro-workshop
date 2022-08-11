@@ -37,7 +37,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 });
                 builder_vec.extend(quote! {
                     if self.#fname == None {
-                        return None;
+                        return Err("field missing".into());
                     }
                 });
                 result_vec.extend(quote! {
@@ -49,6 +49,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
     }
 
     let gen = quote! {
+        use std::error::Error;
+
         pub struct #builder_type{
             #fields_vec
         }
@@ -56,9 +58,9 @@ pub fn derive(input: TokenStream) -> TokenStream {
         impl #builder_type {
             #setter_vec
 
-            fn build(&self) -> Option<#name> {
+            pub fn build(&self) -> Result<#name, Box<dyn Error>> {
                 #builder_vec
-                Some(#name { #result_vec })
+                Ok(#name { #result_vec })
             }
 
             fn new() -> Self {
