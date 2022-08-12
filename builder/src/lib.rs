@@ -103,6 +103,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let mut builder_vec = quote!();
     let mut result_vec = quote!();
 
+    let mut error: Option<proc_macro2::TokenStream> = None;
+
     match ast.fields {
         syn::Fields::Named(named) => {
             for field in named.named.iter() {
@@ -119,18 +121,33 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         }
                         let meta: syn::Meta =
                             attr.parse_args().expect("builder requires each field");
-                        match meta {
-                            syn::Meta::NameValue(m) => match m.lit {
-                                syn::Lit::Str(s) => {
-                                    Some(syn::Ident::new(&s.value(), Span::call_site()))
+                        match meta.clone() {
+                            syn::Meta::NameValue(m) => {
+                                if !m.path.is_ident("each") {
+                                    error = Some(
+                                        syn::Error::new_spanned(
+                                            meta,
+                                            r#"expected `builder(each = "...")`"#,
+                                        )
+                                        .to_compile_error(),
+                                    );
+                                    return None;
                                 }
-                                _ => None,
-                            },
+                                match m.lit {
+                                    syn::Lit::Str(s) => {
+                                        Some(syn::Ident::new(&s.value(), Span::call_site()))
+                                    }
+                                    _ => None,
+                                }
+                            }
                             _ => None,
                         }
                     })
                     .find(|v| v.is_some())
                     .flatten();
+                if error.is_some() {
+                    break;
+                }
 
                 let (filed_ty, setter_ty) =
                     match (maybe_option_ty, maybe_vec_ty, each_attr.is_some()) {
@@ -198,6 +215,13 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
         }
         _ => unimplemented!(),
+    }
+    if error.is_some() {
+        let e = error.unwrap();
+        return quote! {
+            #e
+        }
+        .into();
     }
 
     let gen = quote! {
