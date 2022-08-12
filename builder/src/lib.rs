@@ -153,7 +153,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     match (maybe_option_ty, maybe_vec_ty, each_attr.is_some()) {
                         (Some(_), _, _) => {
                             init_values.extend(quote! {
-                                #fname: None,
+                                #fname: core::option::Option::None,
                             });
                             result_vec.extend(quote! {
                                 #fname: self.#fname.clone(),
@@ -162,7 +162,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                         }
                         (None, Some(_), true) => {
                             init_values.extend(quote! {
-                                #fname: Vec::new(),
+                                #fname: std::vec::Vec::new(),
                             });
 
                             result_vec.extend(quote! {
@@ -175,7 +175,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                                 #fname: None,
                             });
                             builder_vec.extend(quote! {
-                                if self.#fname == None {
+                                if self.#fname == core::option::Option::None {
                                     return Err("field missing".into());
                                 }
                             });
@@ -184,7 +184,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
                                 #fname: self.#fname.clone().unwrap(),
                             });
 
-                            (quote!(Option<#ty>), quote!(#ty))
+                            (quote!(core::option::Option<#ty>), quote!(#ty))
                         }
                     };
 
@@ -236,9 +236,9 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
             #setter_vec
 
-            pub fn build(&self) -> Result<#name, Box<dyn Error>> {
+            pub fn build(&self) -> std::result::Result<#name, std::boxed::Box<dyn std::error::Error>> {
                 #builder_vec
-                Ok(#name { #result_vec })
+                std::result::Result::Ok(#name { #result_vec })
             }
 
             fn new() -> Self {
