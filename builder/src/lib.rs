@@ -7,6 +7,48 @@ use proc_macro2::Span;
 #[macro_use]
 extern crate quote;
 
+fn extract_type_from_option(ty: &syn::Type) -> Option<&syn::Type> {
+    use syn::{GenericArgument, Path, PathArguments, PathSegment};
+
+    fn extract_type_path(ty: &syn::Type) -> Option<&Path> {
+        match *ty {
+            syn::Type::Path(ref typepath) if typepath.qself.is_none() => Some(&typepath.path),
+            _ => None,
+        }
+    }
+
+    fn extract_option_segment(path: &Path) -> Option<&PathSegment> {
+        let idents_of_path = path
+            .segments
+            .iter()
+            .into_iter()
+            .fold(String::new(), |mut acc, v| {
+                acc.push_str(&v.ident.to_string());
+                acc.push('|');
+                acc
+            });
+        vec!["Option|", "std|option|Option|", "core|option|Option|"]
+            .into_iter()
+            .find(|s| &idents_of_path == *s)
+            .and_then(|_| path.segments.last())
+    }
+
+    extract_type_path(ty)
+        .and_then(|path| extract_option_segment(path))
+        .and_then(|path_seg| {
+            let type_params = &path_seg.arguments;
+            // It should have only on angle-bracketed param ("<String>"):
+            match *type_params {
+                PathArguments::AngleBracketed(ref params) => params.args.first(),
+                _ => None,
+            }
+        })
+        .and_then(|generic_arg| match *generic_arg {
+            GenericArgument::Type(ref ty) => Some(ty),
+            _ => None,
+        })
+}
+
 #[proc_macro_derive(Builder)]
 pub fn derive(input: TokenStream) -> TokenStream {
     let ast: syn::ItemStruct = syn::parse(input).unwrap();
@@ -23,26 +65,39 @@ pub fn derive(input: TokenStream) -> TokenStream {
             for field in named.named.iter() {
                 let fname = field.ident.as_ref().unwrap();
                 let ty = &field.ty;
+                let maybe_option_ty = extract_type_from_option(ty);
+                let (filed_ty, setter_ty) = match maybe_option_ty {
+                    Some(_) => (quote!(#ty), quote!(#maybe_option_ty)),
+                    _ => (quote!(Option<#ty>), quote!(#ty)),
+                };
                 init_values.extend(quote! {
                     #fname: None,
                 });
                 fields_vec.extend(quote! {
-                    #fname: Option<#ty>,
+                    #fname: #filed_ty,
                 });
                 setter_vec.extend(quote! {
-                    fn #fname(&mut self, v: #ty) -> &mut Self {
+                    fn #fname(&mut self, v: #setter_ty) -> &mut Self {
                         self.#fname = Some(v);
                         self
                     }
                 });
-                builder_vec.extend(quote! {
-                    if self.#fname == None {
-                        return Err("field missing".into());
+                match maybe_option_ty {
+                    None => {
+                        builder_vec.extend(quote! {
+                            if self.#fname == None {
+                                return Err("field missing".into());
+                            }
+                        });
+
+                        result_vec.extend(quote! {
+                            #fname: self.#fname.clone().unwrap(),
+                        });
                     }
-                });
-                result_vec.extend(quote! {
-                    #fname: self.#fname.clone().unwrap(),
-                });
+                    Some(_) => result_vec.extend(quote! {
+                        #fname: self.#fname.clone(),
+                    }),
+                }
             }
         }
         _ => unimplemented!(),
