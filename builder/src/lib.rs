@@ -110,44 +110,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
                 let ty = &field.ty;
                 let maybe_option_ty = extract_type_from_option(ty);
                 let maybe_vec_ty = extract_type_from_vec(ty);
-                let (filed_ty, setter_ty) = match (maybe_option_ty, maybe_vec_ty) {
-                    (Some(_), _) => {
-                        init_values.extend(quote! {
-                            #fname: None,
-                        });
-                        result_vec.extend(quote! {
-                            #fname: self.#fname.clone(),
-                        });
-                        (quote!(#ty), quote!(#maybe_option_ty))
-                    }
-                    (None, Some(_)) => {
-                        init_values.extend(quote! {
-                            #fname: Vec::new(),
-                        });
-
-                        result_vec.extend(quote! {
-                            #fname: self.#fname.clone(),
-                        });
-                        (quote!(#ty), quote!(#maybe_vec_ty))
-                    }
-                    _ => {
-                        init_values.extend(quote! {
-                            #fname: None,
-                        });
-                        builder_vec.extend(quote! {
-                            if self.#fname == None {
-                                return Err("field missing".into());
-                            }
-                        });
-
-                        result_vec.extend(quote! {
-                            #fname: self.#fname.clone().unwrap(),
-                        });
-
-                        (quote!(Option<#ty>), quote!(#ty))
-                    }
-                };
-
                 let each_attr = field
                     .attrs
                     .iter()
@@ -170,9 +132,49 @@ pub fn derive(input: TokenStream) -> TokenStream {
                     .find(|v| v.is_some())
                     .flatten();
 
+                let (filed_ty, setter_ty) =
+                    match (maybe_option_ty, maybe_vec_ty, each_attr.is_some()) {
+                        (Some(_), _, _) => {
+                            init_values.extend(quote! {
+                                #fname: None,
+                            });
+                            result_vec.extend(quote! {
+                                #fname: self.#fname.clone(),
+                            });
+                            (quote!(#ty), quote!(#maybe_option_ty))
+                        }
+                        (None, Some(_), true) => {
+                            init_values.extend(quote! {
+                                #fname: Vec::new(),
+                            });
+
+                            result_vec.extend(quote! {
+                                #fname: self.#fname.clone(),
+                            });
+                            (quote!(#ty), quote!(#maybe_vec_ty))
+                        }
+                        _ => {
+                            init_values.extend(quote! {
+                                #fname: None,
+                            });
+                            builder_vec.extend(quote! {
+                                if self.#fname == None {
+                                    return Err("field missing".into());
+                                }
+                            });
+
+                            result_vec.extend(quote! {
+                                #fname: self.#fname.clone().unwrap(),
+                            });
+
+                            (quote!(Option<#ty>), quote!(#ty))
+                        }
+                    };
+
                 fields_vec.extend(quote! {
                     #fname: #filed_ty,
                 });
+
                 if each_attr.is_none() {
                     setter_vec.extend(quote! {
                         fn #fname(&mut self, v: #setter_ty) -> &mut Self {
